@@ -50,10 +50,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     extracted = `URL: ${url}\n\nLe site n'a pas pu être récupéré (erreur: ${fetchErr.message}). Déduis le maximum depuis la structure de l'URL seule.`
   }
 
-  // 2. Analyze with Claude
+  // 2. Analyze with Claude + enrich with web search
   try {
     const analysis = await analyzeWithClaude(extracted, url)
-    return res.status(200).json(analysis)
+    const enriched = await enrichWithWebSearch(analysis, url)
+    return res.status(200).json(enriched)
   } catch (claudeErr: any) {
     return res.status(200).json({
       ...fallback,
@@ -227,4 +228,157 @@ RÈGLES :
   }
 
   return result
+}
+
+// ─── Enrich with web search (pass 2) ───
+async function enrichWithWebSearch(
+  initialResult: any,
+  originalUrl: string
+): Promise<any> {
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey || !initialResult.name) return initialResult
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1500,
+        tools: [
+          {
+            type: 'web_search_20250305',
+            name: 'web_search',
+          },
+        ],
+        messages: [
+          {
+            role: 'user',
+            content: `Tu es un assistant de recherche pour un curateur d'art.
+
+J'ai identifié un artiste nommé "${initialResult.name}" depuis l'URL ${originalUrl}.
+
+Voici ce que je sais déjà :
+- Nom : ${initialResult.name}
+- Localisation : ${initialResult.location || 'inconnue'}
+- Notes : ${initialResult.notes || 'aucune'}
+- Disciplines : ${(initialResult.suggested_disciplines || []).join(', ') || 'inconnues'}
+- Liens trouvés : ${(initialResult.links || []).map((l: any) => l.url).join(', ')}
+
+Fais une recherche web sur "${initialResult.name}" artiste/artist pour trouver :
+1. Son site web personnel/portfolio (PAS des pages de galeries tierces)
+2. Ses réseaux sociaux (Instagram, Vimeo, Behance, Twitter/X, LinkedIn)
+3. Sa localisation (ville, pays)
+4. Un email de contact si public
+5. Une courte bio (2-3 phrases)
+6. Des disciplines/tags plus précis
+
+Retourne UNIQUEMENT un JSON valide (pas de markdown, pas de backticks) :
+{
+  "name": "Nom corrigé si meilleur (sinon garder l'original)",
+  "location": "Ville, Pays",
+  "email": "email si trouvé publiquement, sinon chaîne vide",
+  "notes": "Bio courte et pertinente, en français, 2-3 phrases max",
+  "image_url": "URL d'une photo de l'artiste ou de son travail si trouvée (PAS de data:uri)",
+  "additional_links": [
+    {"label": "Portfolio", "url": "https://..."},
+    {"label": "Instagram", "url": "https://instagram.com/..."},
+    {"label": "Vimeo", "url": "https://vimeo.com/..."}
+  ],
+  "suggested_disciplines": ["parmi: Photographe, Réalisateur, Writer, Artiste visuel, Net Art"],
+  "suggested_tags": ["tags pertinents, max 5"]
+}
+
+RÈGLES :
+- Retourne UNIQUEMENT le JSON
+- Ne mets dans additional_links QUE des liens vérifiés (que tu as trouvés via la recherche)
+- Ne mets PAS de liens que tu inventes ou devines
+- Ne duplique PAS les liens déjà connus
+- Si tu ne trouves pas une info, mets une chaîne vide ou un array vide
+- Préfère les sources officielles (site de l'artiste) aux sources tierces (galeries)`,
+          },
+        ],
+      }),
+    })
+
+    if (!response.ok) {
+      const errText = await response.text()
+      console.error('Enrichment API error:', response.status, errText.slice(0, 200))
+      return initialResult
+    }
+
+    const data = await response.json()
+
+    // Extraire le texte de la réponse (peut contenir tool_use et text blocks)
+    const textBlocks = (data.content || [])
+      .filter((b: any) => b.type === 'text')
+      .map((b: any) => b.text)
+      .join('\n')
+
+    // Chercher le JSON dans la réponse
+    const jsonMatch = textBlocks.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) return initialResult
+
+    const clean = jsonMatch[0].replace(/```json\s*|```\s*/g, '').trim()
+    const enriched = JSON.parse(clean)
+
+    // Merger : les données enrichies complètent (ne remplacent pas) les données initiales
+    return {
+      ...initialResult,
+      name: enriched.name || initialResult.name,
+      location: enriched.location || initialResult.location || '',
+      email: enriched.email || initialResult.email || '',
+      notes: enriched.notes || initialResult.notes || '',
+      image_url:
+        enriched.image_url && !enriched.image_url.startsWith('data:')
+          ? enriched.image_url
+          : initialResult.image_url || '',
+      suggested_disciplines:
+        enriched.suggested_disciplines?.length > 0
+          ? enriched.suggested_disciplines
+          : initialResult.suggested_disciplines || [],
+      suggested_tags:
+        enriched.suggested_tags?.length > 0
+          ? enriched.suggested_tags
+          : initialResult.suggested_tags || [],
+      // Merger les liens : garder les existants + ajouter les nouveaux sans doublons
+      links: mergeLinks(initialResult.links || [], enriched.additional_links || []),
+    }
+  } catch (err: any) {
+    console.error('Enrichment error:', err?.message)
+    return initialResult
+  }
+}
+
+// ─── Merge links without duplicates ───
+function mergeLinks(
+  existing: { label: string; url: string }[],
+  additional: { label: string; url: string }[]
+): { label: string; url: string }[] {
+  const merged = [...existing]
+  const existingUrls = new Set(
+    existing.map((l) => {
+      try {
+        return new URL(l.url).hostname + new URL(l.url).pathname.replace(/\/$/, '')
+      } catch {
+        return l.url
+      }
+    })
+  )
+
+  for (const link of additional) {
+    try {
+      const key = new URL(link.url).hostname + new URL(link.url).pathname.replace(/\/$/, '')
+      if (!existingUrls.has(key)) {
+        merged.push(link)
+        existingUrls.add(key)
+      }
+    } catch { /* skip invalid URLs */ }
+  }
+
+  return merged
 }

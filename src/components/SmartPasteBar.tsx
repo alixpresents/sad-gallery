@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 interface ScrapeResult {
   name: string
@@ -41,7 +41,9 @@ async function fetchScrape(url: string): Promise<ScrapeResult> {
 export default function SmartPasteBar({ onResult }: SmartPasteBarProps) {
   const [value, setValue] = useState('')
   const [loading, setLoading] = useState(false)
+  const [loadingMsg, setLoadingMsg] = useState('')
   const [error, setError] = useState('')
+  const phaseTimer = useRef<ReturnType<typeof setTimeout>>(null)
 
   const submit = async (url?: string) => {
     const target = (url || value).trim()
@@ -49,6 +51,10 @@ export default function SmartPasteBar({ onResult }: SmartPasteBarProps) {
 
     setLoading(true)
     setError('')
+    setLoadingMsg('Analyse de la page...')
+    phaseTimer.current = setTimeout(() => {
+      setLoadingMsg('Recherche d\'informations complémentaires...')
+    }, 3000)
 
     try {
       const data = await fetchScrape(target)
@@ -58,7 +64,9 @@ export default function SmartPasteBar({ onResult }: SmartPasteBarProps) {
       setError('Impossible d\'analyser')
       setTimeout(() => setError(''), 2000)
     } finally {
+      if (phaseTimer.current) clearTimeout(phaseTimer.current)
       setLoading(false)
+      setLoadingMsg('')
     }
   }
 
@@ -85,10 +93,9 @@ export default function SmartPasteBar({ onResult }: SmartPasteBarProps) {
           } placeholder:text-neutral-600`}
         />
         {loading ? (
-          <div className="pr-3 flex flex-col items-end">
-            <span className="text-xs text-neutral-400 animate-pulse whitespace-nowrap">Analyse intelligente en cours...</span>
-            <span className="text-[10px] text-neutral-600 whitespace-nowrap">Identification de l'artiste et du projet...</span>
-          </div>
+          <span className="pr-3 text-xs text-neutral-400 animate-pulse whitespace-nowrap">
+            {loadingMsg}
+          </span>
         ) : error ? (
           <span className="pr-3 text-xs text-red-400 whitespace-nowrap">{error}</span>
         ) : (
