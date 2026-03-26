@@ -235,11 +235,16 @@ RÈGLES :
 const LOGO_PATTERNS = [
   'instagram.com/static',
   'instagram.com/images',
-  'cdninstagram.com/v/t51.2885-19/default',
+  'cdninstagram.com',
+  'static.cdninstagram.com',
+  'scontent.cdninstagram.com',
   'facebook.com',
   'vimeo.com/webmaster',
   'behance.net/img',
   'static.xx.fbcdn',
+  'twimg.com/profile_banners',
+  'pbs.twimg.com/profile_images',
+  'abs.twimg.com',
   '/favicon',
   '/logo',
   '/brand',
@@ -292,7 +297,9 @@ Voici ce que je sais déjà :
 - Disciplines : ${(initialResult.suggested_disciplines || []).join(', ') || 'inconnues'}
 - Liens trouvés : ${(initialResult.links || []).map((l: any) => l.url).join(', ')}
 
-Fais une recherche web sur "${initialResult.name}" artiste/artist pour trouver :
+Fais une recherche web en cherchant '${initialResult.name}' ET '${initialResult.name} artist' ET '${initialResult.name} photographer/director/writer' pour maximiser les chances de trouver le bon profil.
+
+Trouve :
 1. Son site web personnel/portfolio (PAS des pages de galeries tierces)
 2. Ses réseaux sociaux (Instagram, Vimeo, Behance, Twitter/X, LinkedIn)
 3. Sa localisation (ville, pays)
@@ -300,9 +307,15 @@ Fais une recherche web sur "${initialResult.name}" artiste/artist pour trouver :
 5. Une courte bio (2-3 phrases)
 6. Des disciplines/tags plus précis
 
+IMPORTANT pour le nom :
+- Le username n'est PAS forcément le vrai nom de l'artiste
+- Cherche le VRAI nom complet (avec tirets, accents, majuscules correctes)
+- Par exemple 'gerardjanclaes' → pourrait être 'Gerard Jan-Claes'
+- Corrige le nom si la recherche web révèle une orthographe différente
+
 Retourne UNIQUEMENT un JSON valide (pas de markdown, pas de backticks) :
 {
-  "name": "Nom corrigé si meilleur (sinon garder l'original)",
+  "name": "Nom CORRIGÉ avec la bonne orthographe trouvée sur le web (sinon garder l'original)",
   "location": "Ville, Pays",
   "email": "email si trouvé publiquement, sinon chaîne vide",
   "notes": "Bio courte et pertinente, en français, 2-3 phrases max",
