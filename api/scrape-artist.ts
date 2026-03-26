@@ -1,133 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
-const PLATFORM_RULES: Record<string, {
-  nameCleanup: RegExp
-  labelDefault: string
-  extractUsername?: (url: string) => string | null
-}> = {
-  'instagram.com': {
-    nameCleanup: /\s*[\(\|@•·–—-]\s*(Instagram|Photos? and Videos?|on Instagram|photos et vidéos).*$/i,
-    labelDefault: 'Instagram',
-    extractUsername: (url) => url.match(/instagram\.com\/([^/?#]+)/)?.[1] || null,
-  },
-  'vimeo.com': {
-    nameCleanup: /\s*[\(\|·–—-]\s*Vimeo.*$/i,
-    labelDefault: 'Vimeo',
-  },
-  'behance.net': {
-    nameCleanup: /\s*[\(\|·–—-]\s*Behance.*$/i,
-    labelDefault: 'Behance',
-  },
-  'twitter.com': {
-    nameCleanup: /\s*[\(\|·–—-]\s*(Twitter|X).*$/i,
-    labelDefault: 'Twitter',
-    extractUsername: (url) => url.match(/twitter\.com\/([^/?#]+)/)?.[1] || null,
-  },
-  'x.com': {
-    nameCleanup: /\s*[\(\|·–—-]\s*(Twitter|X).*$/i,
-    labelDefault: 'X',
-    extractUsername: (url) => url.match(/x\.com\/([^/?#]+)/)?.[1] || null,
-  },
-  'linkedin.com': {
-    nameCleanup: /\s*[\(\|·–—-]\s*LinkedIn.*$/i,
-    labelDefault: 'LinkedIn',
-  },
-  'tiktok.com': {
-    nameCleanup: /\s*[\(\|·–—-]\s*TikTok.*$/i,
-    labelDefault: 'TikTok',
-    extractUsername: (url) => url.match(/tiktok\.com\/@([^/?#]+)/)?.[1] || null,
-  },
-}
-
-const SOCIAL_DOMAINS = [
-  'instagram.com',
-  'vimeo.com',
-  'behance.net',
-  'twitter.com',
-  'x.com',
-  'linkedin.com',
-  'tiktok.com',
-  'youtube.com',
-  'soundcloud.com',
-  'flickr.com',
-  'tumblr.com',
-]
-
-function extractMeta(html: string, property: string): string | null {
-  const patterns = [
-    new RegExp(`<meta[^>]*(?:property|name)=["']${property}["'][^>]*content=["']([^"']+)["']`, 'i'),
-    new RegExp(`<meta[^>]*content=["']([^"']+)["'][^>]*(?:property|name)=["']${property}["']`, 'i'),
-  ]
-  for (const pattern of patterns) {
-    const match = html.match(pattern)
-    if (match?.[1]) return match[1]
-  }
-  return null
-}
-
-function extractTitle(html: string): string | null {
-  const match = html.match(/<title[^>]*>([^<]+)<\/title>/i)
-  return match?.[1]?.trim() || null
-}
-
-function extractSocialLinks(html: string, sourceUrl: string): { label: string; url: string }[] {
-  const links: { label: string; url: string }[] = []
-  const seen = new Set<string>()
-
-  const hrefRegex = /href=["']([^"']+)["']/gi
-  let match
-  while ((match = hrefRegex.exec(html)) !== null) {
-    const href = match[1]
-    for (const domain of SOCIAL_DOMAINS) {
-      if (href.includes(domain) && !href.includes(new URL(sourceUrl).hostname)) {
-        // Normalize URL
-        let url = href
-        if (!url.startsWith('http')) {
-          try { url = new URL(url, sourceUrl).href } catch { continue }
-        }
-        const key = url.replace(/\/+$/, '').toLowerCase()
-        if (seen.has(key)) continue
-        seen.add(key)
-
-        const rule = PLATFORM_RULES[domain]
-        links.push({ label: rule?.labelDefault || domain.split('.')[0], url })
-      }
-    }
-  }
-
-  return links
-}
-
-function detectPlatform(url: string): { domain: string; rule: typeof PLATFORM_RULES[string] } | null {
-  try {
-    const hostname = new URL(url).hostname.replace('www.', '')
-    for (const [domain, rule] of Object.entries(PLATFORM_RULES)) {
-      if (hostname.includes(domain)) return { domain, rule }
-    }
-  } catch {}
-  return null
-}
-
-function cleanName(raw: string, platform: ReturnType<typeof detectPlatform>): string {
-  let name = raw.trim()
-  if (platform?.rule.nameCleanup) {
-    name = name.replace(platform.rule.nameCleanup, '')
-  }
-  // Generic cleanup for common patterns
-  name = name.replace(/\s*[\|–—-]\s*(Portfolio|Official|Website|Home|Accueil).*$/i, '')
-  return name.trim()
-}
-
-function getHostLabel(url: string): string {
-  try {
-    const h = new URL(url).hostname.replace('www.', '')
-    return h.includes('.') ? h : 'Portfolio'
-  } catch {
-    return 'Portfolio'
-  }
-}
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // CORS
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
@@ -137,91 +11,202 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { url } = req.body || {}
   if (!url || typeof url !== 'string') return res.status(400).json({ error: 'url required' })
 
-  // Validate URL
-  let normalizedUrl: string
   try {
-    normalizedUrl = url.startsWith('http') ? url : `https://${url}`
-    new URL(normalizedUrl)
-  } catch {
-    return res.status(400).json({ error: 'Invalid URL' })
-  }
-
-  const platform = detectPlatform(normalizedUrl)
-
-  try {
+    // 1. Fetch la page
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 6000)
-
-    const response = await fetch(normalizedUrl, {
+    const timeout = setTimeout(() => controller.abort(), 8000)
+    const response = await fetch(url, {
       signal: controller.signal,
-      redirect: 'follow',
       headers: {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml',
         'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
       },
+      redirect: 'follow',
     })
     clearTimeout(timeout)
-
     const html = await response.text()
 
-    // Extract data
-    const rawName = extractMeta(html, 'og:title') || extractTitle(html) || ''
-    const name = cleanName(rawName, platform)
-    let image_url = extractMeta(html, 'og:image') || extractMeta(html, 'twitter:image') || ''
-    const description = extractMeta(html, 'og:description') || extractMeta(html, 'description') || ''
-    const siteName = extractMeta(html, 'og:site_name') || ''
-    const locale = extractMeta(html, 'og:locale') || ''
+    // 2. Extraire le contenu pertinent
+    const extracted = extractRelevantContent(html, url)
 
-    // Resolve relative image URL
-    if (image_url && !image_url.startsWith('http')) {
-      try { image_url = new URL(image_url, normalizedUrl).href } catch {}
-    }
+    // 3. Envoyer à Claude pour analyse
+    const analysis = await analyzeWithClaude(extracted, url)
 
-    // Build links
-    const links: { label: string; url: string }[] = []
-
-    // Source link first
-    const sourceLabel = platform?.rule.labelDefault || (siteName || getHostLabel(normalizedUrl))
-    links.push({ label: sourceLabel, url: normalizedUrl })
-
-    // Social links found on the page (skip for social platforms themselves)
-    if (!platform) {
-      const socialLinks = extractSocialLinks(html, normalizedUrl)
-      for (const sl of socialLinks) {
-        if (!links.some((l) => l.url === sl.url)) links.push(sl)
-      }
-    }
-
-    // Location (best effort from locale)
-    let location = ''
-    if (locale) {
-      const parts = locale.split('_')
-      if (parts.length > 1) {
-        const country = parts[1]?.toUpperCase()
-        if (country && country !== 'US' && country !== 'EN') location = country
-      }
-    }
-
-    const platformLabel = platform?.rule.labelDefault || (siteName || 'Portfolio')
-
-    return res.status(200).json({
-      name,
-      image_url,
-      notes: description.slice(0, 500),
-      location,
-      links,
-      platform: platformLabel,
-    })
+    return res.status(200).json(analysis)
   } catch {
-    // On error, return minimal data with just the URL
+    // Fallback minimal si tout échoue
     return res.status(200).json({
       name: '',
       image_url: '',
       notes: '',
       location: '',
-      links: [{ label: platform?.rule.labelDefault || 'Lien', url: normalizedUrl }],
-      platform: platform?.rule.labelDefault || 'Lien',
+      links: [{ label: 'Source', url }],
+      pins: [],
+      platform: 'Unknown',
+      suggested_disciplines: [],
+      suggested_tags: [],
     })
   }
+}
+
+// ─── Extract relevant content from HTML ───
+function extractRelevantContent(html: string, url: string): string {
+  // Extraire les meta tags
+  const metas: string[] = []
+  const metaRegex = /<meta[^>]*>/gi
+  let match
+  while ((match = metaRegex.exec(html)) !== null) {
+    metas.push(match[0])
+  }
+
+  // Extraire le <title>
+  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)
+  const title = titleMatch?.[1]?.trim() || ''
+
+  // Extraire tous les liens <a href>
+  const links: string[] = []
+  const linkRegex = /<a[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi
+  while ((match = linkRegex.exec(html)) !== null && links.length < 50) {
+    const href = match[1]
+    const text = match[2].replace(/<[^>]*>/g, '').trim()
+    if (href && (href.startsWith('http') || href.startsWith('/'))) {
+      links.push(`${text} → ${href}`)
+    }
+  }
+
+  // Extraire du texte visible (body, limité)
+  const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i)
+  let bodyText = ''
+  if (bodyMatch) {
+    bodyText = bodyMatch[1]
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<nav[\s\S]*?<\/nav>/gi, '')
+      .replace(/<footer[\s\S]*?<\/footer>/gi, '')
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 3000)
+  }
+
+  // Assembler le contexte pour Claude (max ~6000 chars)
+  return [
+    `URL: ${url}`,
+    `Title: ${title}`,
+    `Meta tags:\n${metas.join('\n')}`,
+    `Links found:\n${links.slice(0, 30).join('\n')}`,
+    `Body text (truncated):\n${bodyText}`,
+  ].join('\n\n').slice(0, 6000)
+}
+
+// ─── Analyze with Claude API ───
+async function analyzeWithClaude(content: string, originalUrl: string) {
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) {
+    throw new Error('ANTHROPIC_API_KEY not set')
+  }
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1000,
+      messages: [
+        {
+          role: 'user',
+          content: `Tu es un assistant qui analyse des pages web pour extraire des informations sur des artistes/créatifs.
+
+Analyse le contenu suivant et retourne UNIQUEMENT un JSON valide (pas de markdown, pas de backticks, pas de texte avant ou après).
+
+Contenu de la page :
+---
+${content}
+---
+
+URL source : ${originalUrl}
+
+Détermine :
+1. **C'est quoi cette page ?** Un profil artiste, une page projet/œuvre, un article, un portfolio ?
+2. **Qui est l'artiste principal ?** (le créateur, pas la galerie ni la plateforme)
+3. **Si c'est une page projet/œuvre** : quel est le nom du projet ? (ça deviendra un "pin")
+
+Retourne ce JSON :
+{
+  "name": "Nom de l'artiste (propre, sans suffixes plateforme)",
+  "image_url": "URL de l'image la plus représentative (og:image ou autre), URL absolue",
+  "notes": "Description courte de l'artiste ou du projet, 1-2 phrases max, en français si possible",
+  "location": "Ville, Pays si trouvable (sinon chaîne vide)",
+  "platform": "Nom de la plateforme ou 'Portfolio' si site perso",
+  "page_type": "profile | project | article | other",
+  "project_name": "Nom du projet si page_type=project, sinon null",
+  "links": [
+    {"label": "Nom plateforme", "url": "URL source"},
+    ...autres liens sociaux/portfolio trouvés sur la page
+  ],
+  "suggested_disciplines": ["parmi: Photographe, Réalisateur, Writer, Artiste visuel, Net Art"],
+  "suggested_tags": ["tags pertinents déduits du contenu, max 5"]
+}
+
+RÈGLES :
+- Retourne UNIQUEMENT le JSON, rien d'autre
+- Si tu ne trouves pas une info, mets une chaîne vide ou un array vide
+- Les URLs dans links doivent être absolues
+- Pour image_url, privilégie og:image
+- Pour les liens sociaux, ne mets que ceux que tu trouves réellement dans le contenu
+- suggested_disciplines : déduis du contenu (photo, vidéo, texte, art numérique, net art...)
+- suggested_tags : déduis du style, medium, thèmes (ex: "generative art", "landscape", "AI art")
+- Le lien source (${originalUrl}) doit TOUJOURS être dans links`,
+        },
+      ],
+    }),
+  })
+
+  const data = await response.json()
+  const text = data.content?.[0]?.text || '{}'
+
+  // Parser le JSON (nettoyer les éventuels backticks)
+  const clean = text.replace(/```json\s*|```\s*/g, '').trim()
+  let parsed
+  try {
+    parsed = JSON.parse(clean)
+  } catch {
+    throw new Error('Failed to parse Claude response')
+  }
+
+  // Transformer en format attendu par le frontend
+  const result = {
+    name: parsed.name || '',
+    image_url: parsed.image_url || '',
+    notes: parsed.notes || '',
+    location: parsed.location || '',
+    platform: parsed.platform || 'Unknown',
+    links: Array.isArray(parsed.links) ? parsed.links : [{ label: 'Source', url: originalUrl }],
+    pins: [] as { label: string; url: string }[],
+    page_type: parsed.page_type || 'other',
+    project_name: parsed.project_name || null,
+    suggested_disciplines: Array.isArray(parsed.suggested_disciplines) ? parsed.suggested_disciplines : [],
+    suggested_tags: Array.isArray(parsed.suggested_tags) ? parsed.suggested_tags : [],
+  }
+
+  // Si c'est une page projet, ajouter comme pin au lieu de lien principal
+  if (parsed.page_type === 'project' && parsed.project_name) {
+    result.pins = [{ label: parsed.project_name, url: originalUrl }]
+    // Retirer l'URL source des links puisqu'elle est dans pins
+    result.links = result.links.filter((l: { url: string }) => l.url !== originalUrl)
+    // Ajouter le site racine comme lien portfolio si pas déjà là
+    try {
+      const rootUrl = new URL(originalUrl).origin
+      if (!result.links.some((l: { url: string }) => l.url.startsWith(rootUrl))) {
+        result.links.unshift({ label: 'Portfolio', url: rootUrl })
+      }
+    } catch { /* ignore */ }
+  }
+
+  return result
 }

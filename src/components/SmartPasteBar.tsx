@@ -1,8 +1,21 @@
 import { useState } from 'react'
-import type { TalentInsert } from '../types/talent'
+
+interface ScrapeResult {
+  name: string
+  image_url: string
+  notes: string
+  location: string
+  platform: string
+  links: { label: string; url: string }[]
+  pins: { label: string; url: string }[]
+  page_type: string
+  project_name: string | null
+  suggested_disciplines: string[]
+  suggested_tags: string[]
+}
 
 interface SmartPasteBarProps {
-  onResult: (prefilled: Partial<TalentInsert>, platform?: string) => void
+  onResult: (result: ScrapeResult) => void
 }
 
 function isUrl(text: string): boolean {
@@ -14,43 +27,33 @@ function isUrl(text: string): boolean {
   }
 }
 
+async function fetchScrape(url: string): Promise<ScrapeResult> {
+  const res = await fetch('/api/scrape-artist', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url: url.startsWith('http') ? url : `https://${url}` }),
+  })
+  const data = await res.json()
+  if (!res.ok) throw new Error(data.error || 'Erreur')
+  return data
+}
+
 export default function SmartPasteBar({ onResult }: SmartPasteBarProps) {
   const [value, setValue] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const submit = async () => {
-    const url = value.trim()
-    if (!url || !isUrl(url)) return
+  const submit = async (url?: string) => {
+    const target = (url || value).trim()
+    if (!target || !isUrl(target)) return
 
     setLoading(true)
     setError('')
 
     try {
-      const res = await fetch('/api/scrape-artist', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: url.startsWith('http') ? url : `https://${url}` }),
-      })
-      const data = await res.json()
-
-      if (!res.ok) {
-        throw new Error(data.error || 'Erreur')
-      }
-
-      const prefilled: Partial<TalentInsert> = {
-        name: data.name || '',
-        image_url: data.image_url || '',
-        notes: data.notes || '',
-        location: data.location || '',
-        data: {
-          links: data.links?.length ? data.links : [{ label: '', url }],
-          pins: [],
-        },
-      }
-
+      const data = await fetchScrape(target)
       setValue('')
-      onResult(prefilled, data.platform)
+      onResult(data)
     } catch {
       setError('Impossible d\'analyser')
       setTimeout(() => setError(''), 2000)
@@ -72,51 +75,27 @@ export default function SmartPasteBar({ onResult }: SmartPasteBarProps) {
             if (isUrl(text)) {
               e.preventDefault()
               setValue(text)
-              // Auto-submit after paste
-              setTimeout(() => {
-                setValue(text)
-                setLoading(true)
-                fetch('/api/scrape-artist', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ url: text.startsWith('http') ? text : `https://${text}` }),
-                })
-                  .then((r) => r.json())
-                  .then((data) => {
-                    const prefilled: Partial<TalentInsert> = {
-                      name: data.name || '',
-                      image_url: data.image_url || '',
-                      notes: data.notes || '',
-                      location: data.location || '',
-                      data: {
-                        links: data.links?.length ? data.links : [{ label: '', url: text }],
-                        pins: [],
-                      },
-                    }
-                    setValue('')
-                    onResult(prefilled, data.platform)
-                  })
-                  .catch(() => {
-                    setError('Impossible d\'analyser')
-                    setTimeout(() => setError(''), 2000)
-                  })
-                  .finally(() => setLoading(false))
-              }, 50)
+              setTimeout(() => submit(text), 50)
             }
           }}
           disabled={loading}
-          placeholder={loading ? 'Analyse de la page...' : 'Coller une URL pour ajouter un talent...'}
+          placeholder={loading ? '' : 'Coller une URL pour ajouter un talent...'}
           className={`flex-1 bg-transparent px-2 py-2 text-sm outline-none ${
-            loading ? 'text-neutral-500 animate-pulse' : error ? 'text-red-400' : 'text-white'
+            loading ? 'text-neutral-500' : error ? 'text-red-400' : 'text-white'
           } placeholder:text-neutral-600`}
         />
-        {error ? (
+        {loading ? (
+          <div className="pr-3 flex flex-col items-end">
+            <span className="text-xs text-neutral-400 animate-pulse whitespace-nowrap">Analyse intelligente en cours...</span>
+            <span className="text-[10px] text-neutral-600 whitespace-nowrap">Identification de l'artiste et du projet...</span>
+          </div>
+        ) : error ? (
           <span className="pr-3 text-xs text-red-400 whitespace-nowrap">{error}</span>
         ) : (
           <button
             type="button"
-            onClick={submit}
-            disabled={loading || !value.trim()}
+            onClick={() => submit()}
+            disabled={!value.trim()}
             className="px-3 py-2 text-neutral-500 hover:text-neutral-300 disabled:opacity-30 transition-colors text-sm"
           >
             +

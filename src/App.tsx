@@ -185,9 +185,24 @@ function App() {
       {/* Smart Paste */}
       <div className="mb-6">
         <SmartPasteBar
-          onResult={(prefilled, platform) => {
-            setNewTalentDefaults(prefilled)
-            setPrefilledPlatform(platform)
+          onResult={(result) => {
+            setNewTalentDefaults({
+              name: result.name,
+              image_url: result.image_url,
+              notes: result.notes,
+              location: result.location,
+              disciplines: result.suggested_disciplines || [],
+              tags: result.suggested_tags || [],
+              data: {
+                links: result.links?.length > 0 ? result.links : [{ label: '', url: '' }],
+                pins: result.pins?.length > 0 ? result.pins : [],
+              },
+            })
+            const platformLabel = result.platform || 'Unknown'
+            const suffix = result.page_type === 'project' && result.project_name
+              ? ` (page projet détectée — ajouté en pin)`
+              : ''
+            setPrefilledPlatform(platformLabel + suffix)
             setShowNew(true)
           }}
         />
