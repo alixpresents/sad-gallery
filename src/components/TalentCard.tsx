@@ -13,6 +13,7 @@ interface TalentCardProps {
 
 export default function TalentCard({ talent, onEdit, onStatusChange }: TalentCardProps) {
   const [pinsExpanded, setPinsExpanded] = useState(false)
+  const [statusOpen, setStatusOpen] = useState(false)
 
   const links = talent.data?.links ?? []
   const pins = talent.data?.pins ?? []
@@ -26,6 +27,7 @@ export default function TalentCard({ talent, onEdit, onStatusChange }: TalentCar
         e.dataTransfer.effectAllowed = 'move'
       }}
       className="bg-[#111] border border-neutral-800 rounded-lg overflow-hidden hover:border-neutral-700 transition-colors"
+      style={{ position: 'relative', zIndex: statusOpen ? 10 : 1 }}
     >
       {/* Zone haute — cliquable → onEdit */}
       <div
@@ -77,6 +79,7 @@ export default function TalentCard({ talent, onEdit, onStatusChange }: TalentCar
         <QuickStatus
           current={talent.status}
           onChange={(status) => onStatusChange(talent.id, status)}
+          onOpenChange={setStatusOpen}
         />
 
         {visibleLinks.length > 0 && (

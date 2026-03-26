@@ -5,10 +5,16 @@ import type { StatusId } from '../lib/constants'
 interface QuickStatusProps {
   current: StatusId
   onChange: (status: StatusId) => void
+  onOpenChange?: (isOpen: boolean) => void
 }
 
-export default function QuickStatus({ current, onChange }: QuickStatusProps) {
+export default function QuickStatus({ current, onChange, onOpenChange }: QuickStatusProps) {
   const [open, setOpen] = useState(false)
+
+  const setOpenAndNotify = (v: boolean) => {
+    setOpen(v)
+    onOpenChange?.(v)
+  }
   const ref = useRef<HTMLDivElement>(null)
 
   const currentStatus = STATUSES.find((s) => s.id === current) ?? STATUSES[0]
@@ -17,7 +23,7 @@ export default function QuickStatus({ current, onChange }: QuickStatusProps) {
     if (!open) return
     const handler = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false)
+        setOpenAndNotify(false)
       }
     }
     document.addEventListener('mousedown', handler)
@@ -25,10 +31,10 @@ export default function QuickStatus({ current, onChange }: QuickStatusProps) {
   }, [open])
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className={`relative ${open ? 'z-50' : ''}`}>
       <button
         type="button"
-        onClick={(e) => { e.stopPropagation(); setOpen(!open) }}
+        onClick={(e) => { e.stopPropagation(); setOpenAndNotify(!open) }}
         className="flex items-center gap-1.5 text-[11px] text-neutral-400 hover:text-neutral-200 transition-colors"
       >
         <span
@@ -48,7 +54,7 @@ export default function QuickStatus({ current, onChange }: QuickStatusProps) {
               onClick={(e) => {
                 e.stopPropagation()
                 onChange(s.id)
-                setOpen(false)
+                setOpenAndNotify(false)
               }}
               className={`
                 w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-left transition-colors
