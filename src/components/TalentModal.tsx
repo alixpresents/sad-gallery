@@ -49,8 +49,6 @@ function initForm(talent: Talent | TalentInsert): FormState {
 
 export default function TalentModal({ talent, onSave, onDelete, onClose, prefilledPlatform }: TalentModalProps) {
   const [form, setForm] = useState<FormState>(() => initForm(talent))
-  const [fetchingImage, setFetchingImage] = useState(false)
-  const [imageManual, setImageManual] = useState(() => !!('image_url' in talent && talent.image_url))
   const [showPrefilled, setShowPrefilled] = useState(!!prefilledPlatform)
   const isEdit = 'id' in talent && !!talent.id
 
@@ -60,34 +58,6 @@ export default function TalentModal({ talent, onSave, onDelete, onClose, prefill
     const timer = setTimeout(() => setShowPrefilled(false), 3000)
     return () => clearTimeout(timer)
   }, [showPrefilled])
-
-  // Auto-fetch OG image when a link is added and image_url is empty
-  const linksKey = form.links.map((l) => l.url).join(',')
-  useEffect(() => {
-    if (imageManual || form.image_url) return
-
-    const firstUrl = form.links.find((l) => l.url.startsWith('http'))?.url
-    if (!firstUrl) return
-
-    setFetchingImage(true)
-    const timer = setTimeout(async () => {
-      try {
-        const res = await fetch('/api/og-image', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: firstUrl }),
-        })
-        const data = await res.json()
-        if (data.imageUrl) {
-          setForm((prev) => prev.image_url ? prev : { ...prev, image_url: data.imageUrl })
-        }
-      } catch { /* ignore */ }
-      setFetchingImage(false)
-    }, 500)
-
-    return () => { clearTimeout(timer); setFetchingImage(false) }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [linksKey])
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setShowPrefilled(false)
@@ -164,14 +134,7 @@ export default function TalentModal({ talent, onSave, onDelete, onClose, prefill
 
         {/* Image + Nom */}
         <div className="flex gap-4 mb-5">
-          <div className="relative">
-            <Avatar src={form.image_url} name={form.name || '?'} size={64} />
-            {fetchingImage && (
-              <span className="absolute -bottom-4 left-0 text-[10px] text-neutral-500 animate-pulse whitespace-nowrap">
-                Recherche image...
-              </span>
-            )}
-          </div>
+          <Avatar src={form.image_url} name={form.name || '?'} size={64} />
           <div className="flex-1 flex flex-col gap-2">
             <input
               autoFocus
@@ -182,7 +145,7 @@ export default function TalentModal({ talent, onSave, onDelete, onClose, prefill
             />
             <input
               value={form.image_url}
-              onChange={(e) => { set('image_url', e.target.value); setImageManual(true) }}
+              onChange={(e) => set('image_url', e.target.value)}
               placeholder="URL image"
               className="bg-[#111] border border-neutral-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-neutral-600"
             />

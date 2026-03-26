@@ -26,7 +26,7 @@ export default function TalentCard({ talent, onEdit, onStatusChange }: TalentCar
         e.dataTransfer.setData('text/plain', talent.id)
         e.dataTransfer.effectAllowed = 'move'
       }}
-      className="bg-[#111] border border-neutral-800 rounded-lg overflow-hidden hover:border-neutral-700 transition-colors"
+      className="bg-[#111] border border-neutral-800 rounded-lg hover:border-neutral-700 transition-colors"
       style={{ position: 'relative', zIndex: statusOpen ? 10 : 1 }}
     >
       {/* Zone haute — cliquable → onEdit */}
