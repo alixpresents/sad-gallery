@@ -34,8 +34,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const analysis = await analyzeWithClaude(extracted, url)
 
     return res.status(200).json(analysis)
-  } catch {
-    // Fallback minimal si tout échoue
+  } catch (err: any) {
     return res.status(200).json({
       name: '',
       image_url: '',
@@ -46,6 +45,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       platform: 'Unknown',
       suggested_disciplines: [],
       suggested_tags: [],
+      _debug_error: err?.message || String(err),
+      _debug_stack: err?.stack?.slice(0, 500) || '',
     })
   }
 }
@@ -166,6 +167,11 @@ RÈGLES :
       ],
     }),
   })
+
+  if (!response.ok) {
+    const errorBody = await response.text()
+    throw new Error(`Anthropic API ${response.status}: ${errorBody.slice(0, 300)}`)
+  }
 
   const data = await response.json()
   const text = data.content?.[0]?.text || '{}'
