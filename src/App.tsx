@@ -10,6 +10,7 @@ import ListView from './components/ListView'
 import GalleryView from './components/GalleryView'
 import TalentModal from './components/TalentModal'
 import Pill from './components/Pill'
+import SmartPasteBar from './components/SmartPasteBar'
 
 type View = 'board' | 'list' | 'gallery'
 
@@ -51,6 +52,8 @@ function App() {
   const [showNew, setShowNew] = useState(false)
   const [sortKey, setSortKey] = useState<SortKey>('added_at')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
+  const [newTalentDefaults, setNewTalentDefaults] = useState<Partial<TalentInsert> | null>(null)
+  const [prefilledPlatform, setPrefilledPlatform] = useState<string | undefined>(undefined)
 
   // --- Login ---
   const handleLogin = async (e: React.FormEvent) => {
@@ -157,7 +160,7 @@ function App() {
   return (
     <div className="min-h-screen bg-[#050505] text-white p-6 md:p-8 font-['Inter']">
       {/* Header */}
-      <div className="flex justify-between items-start mb-7">
+      <div className="flex justify-between items-start mb-4">
         <div>
           <p className="text-[10px] tracking-[.14em] uppercase text-neutral-600 mb-1">SAD PICTURES</p>
           <h1 className="text-2xl font-bold text-neutral-200 tracking-tight">Gallery · Talent Board</h1>
@@ -171,12 +174,23 @@ function App() {
             Déconnexion
           </button>
           <button
-            onClick={() => setShowNew(true)}
+            onClick={() => { setNewTalentDefaults(null); setPrefilledPlatform(undefined); setShowNew(true) }}
             className="bg-white text-black rounded-lg px-5 py-2.5 text-sm font-semibold hover:bg-neutral-200 transition-colors"
           >
             + Nouveau talent
           </button>
         </div>
+      </div>
+
+      {/* Smart Paste */}
+      <div className="mb-6">
+        <SmartPasteBar
+          onResult={(prefilled, platform) => {
+            setNewTalentDefaults(prefilled)
+            setPrefilledPlatform(platform)
+            setShowNew(true)
+          }}
+        />
       </div>
 
       {/* Toolbar */}
@@ -280,9 +294,14 @@ function App() {
       )}
       {showNew && (
         <TalentModal
-          talent={{ ...EMPTY_TALENT, added_at: new Date().toISOString().slice(0, 10) }}
+          talent={{
+            ...EMPTY_TALENT,
+            added_at: new Date().toISOString().slice(0, 10),
+            ...newTalentDefaults,
+          }}
           onSave={handleUpsert}
-          onClose={() => setShowNew(false)}
+          onClose={() => { setShowNew(false); setNewTalentDefaults(null); setPrefilledPlatform(undefined) }}
+          prefilledPlatform={prefilledPlatform}
         />
       )}
     </div>

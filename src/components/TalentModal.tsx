@@ -12,6 +12,7 @@ interface TalentModalProps {
   onSave: (data: Talent | TalentInsert) => void
   onDelete?: (id: string) => void
   onClose: () => void
+  prefilledPlatform?: string
 }
 
 interface FormState {
@@ -46,11 +47,19 @@ function initForm(talent: Talent | TalentInsert): FormState {
   }
 }
 
-export default function TalentModal({ talent, onSave, onDelete, onClose }: TalentModalProps) {
+export default function TalentModal({ talent, onSave, onDelete, onClose, prefilledPlatform }: TalentModalProps) {
   const [form, setForm] = useState<FormState>(() => initForm(talent))
   const [fetchingImage, setFetchingImage] = useState(false)
   const [imageManual, setImageManual] = useState(() => !!('image_url' in talent && talent.image_url))
+  const [showPrefilled, setShowPrefilled] = useState(!!prefilledPlatform)
   const isEdit = 'id' in talent && !!talent.id
+
+  // Auto-hide prefilled badge
+  useEffect(() => {
+    if (!showPrefilled) return
+    const timer = setTimeout(() => setShowPrefilled(false), 3000)
+    return () => clearTimeout(timer)
+  }, [showPrefilled])
 
   // Auto-fetch OG image when a link is added and image_url is empty
   const linksKey = form.links.map((l) => l.url).join(',')
@@ -80,8 +89,10 @@ export default function TalentModal({ talent, onSave, onDelete, onClose }: Talen
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linksKey])
 
-  const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
+  const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
+    setShowPrefilled(false)
     setForm((prev) => ({ ...prev, [key]: value }))
+  }
 
   const toggleDiscipline = (d: string) => {
     set(
@@ -132,9 +143,16 @@ export default function TalentModal({ talent, onSave, onDelete, onClose }: Talen
       >
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-bold text-neutral-200">
-            {isEdit ? 'Modifier' : 'Nouveau talent'}
-          </h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-bold text-neutral-200">
+              {isEdit ? 'Modifier' : 'Nouveau talent'}
+            </h2>
+            {showPrefilled && prefilledPlatform && (
+              <span className="text-xs text-green-400 animate-pulse">
+                Pré-rempli depuis {prefilledPlatform}
+              </span>
+            )}
+          </div>
           <button
             type="button"
             onClick={onClose}
