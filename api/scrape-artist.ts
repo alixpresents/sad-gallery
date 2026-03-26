@@ -54,6 +54,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const analysis = await analyzeWithClaude(extracted, url)
     const enriched = await enrichWithWebSearch(analysis, url)
+    filterLogoImage(enriched)
     return res.status(200).json(enriched)
   } catch (claudeErr: any) {
     return res.status(200).json({
@@ -230,6 +231,28 @@ RÈGLES :
   return result
 }
 
+// ─── Filter out platform logo images ───
+const LOGO_PATTERNS = [
+  'instagram.com/static',
+  'instagram.com/images',
+  'cdninstagram.com/v/t51.2885-19/default',
+  'facebook.com',
+  'vimeo.com/webmaster',
+  'behance.net/img',
+  'static.xx.fbcdn',
+  '/favicon',
+  '/logo',
+  '/brand',
+  'placeholder',
+  'default_profile',
+]
+
+function filterLogoImage(result: any) {
+  if (result.image_url && LOGO_PATTERNS.some((p) => result.image_url.includes(p))) {
+    result.image_url = ''
+  }
+}
+
 // ─── Enrich with web search (pass 2) ───
 async function enrichWithWebSearch(
   initialResult: any,
@@ -299,7 +322,15 @@ RÈGLES :
 - Ne mets PAS de liens que tu inventes ou devines
 - Ne duplique PAS les liens déjà connus
 - Si tu ne trouves pas une info, mets une chaîne vide ou un array vide
-- Préfère les sources officielles (site de l'artiste) aux sources tierces (galeries)`,
+- Préfère les sources officielles (site de l'artiste) aux sources tierces (galeries)
+
+IMPORTANT pour l'image :
+- Cherche une photo portrait ou une image représentative du TRAVAIL de l'artiste
+- Cherche '${initialResult.name} artist portrait' ou '${initialResult.name} artwork'
+- L'URL doit être une vraie image (terminant par .jpg, .png, .webp ou hébergée sur un CDN d'images)
+- NE PAS retourner de logos de plateformes (Instagram, Vimeo, etc.)
+- NE PAS retourner de data:uri ou base64
+- Préfère les images depuis le site officiel de l'artiste ou des galeries reconnues`,
           },
         ],
       }),
