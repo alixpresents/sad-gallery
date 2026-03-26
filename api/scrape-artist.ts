@@ -11,42 +11,54 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { url } = req.body || {}
   if (!url || typeof url !== 'string') return res.status(400).json({ error: 'url required' })
 
+  const fallback = {
+    name: '',
+    image_url: '',
+    notes: '',
+    location: '',
+    links: [{ label: 'Source', url }],
+    pins: [],
+    platform: 'Unknown',
+    suggested_disciplines: [] as string[],
+    suggested_tags: [] as string[],
+  }
+
+  // 1. Try to fetch the page
+  let extracted: string | null = null
   try {
-    // 1. Fetch la page
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 8000)
     const response = await fetch(url, {
       signal: controller.signal,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
+        'Accept-Encoding': 'identity',
+        'Connection': 'keep-alive',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
       },
       redirect: 'follow',
     })
     clearTimeout(timeout)
     const html = await response.text()
+    extracted = extractRelevantContent(html, url)
+  } catch (fetchErr: any) {
+    // Page inaccessible — on tentera Claude avec l'URL seule
+    extracted = `URL: ${url}\n\nLe site n'a pas pu être récupéré (erreur: ${fetchErr.message}). Déduis le maximum depuis la structure de l'URL seule.`
+  }
 
-    // 2. Extraire le contenu pertinent
-    const extracted = extractRelevantContent(html, url)
-
-    // 3. Envoyer à Claude pour analyse
+  // 2. Analyze with Claude
+  try {
     const analysis = await analyzeWithClaude(extracted, url)
-
     return res.status(200).json(analysis)
-  } catch (err: any) {
+  } catch (claudeErr: any) {
     return res.status(200).json({
-      name: '',
-      image_url: '',
-      notes: '',
-      location: '',
-      links: [{ label: 'Source', url }],
-      pins: [],
-      platform: 'Unknown',
-      suggested_disciplines: [],
-      suggested_tags: [],
-      _debug_error: err?.message || String(err),
-      _debug_stack: err?.stack?.slice(0, 500) || '',
+      ...fallback,
+      _debug_error: claudeErr?.message || String(claudeErr),
+      _debug_stack: claudeErr?.stack?.slice(0, 500) || '',
     })
   }
 }
